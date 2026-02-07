@@ -36,11 +36,20 @@ Defines Kubernetes Services that expose the deployments:
 | fleetman-queue | NodePort | 8161:30010, 61616 | ✅ Queue management |
 | fleetman-position-tracker | ClusterIP | 8080 | ❌ Internal only |
 
+### 📄 `01-storage.yaml`
+Persistent storage configuration for MongoDB:
+
+- **PersistentVolumeClaim**: `mongo-pvc` (1Gi)
+- **PersistentVolume**: `local-storage` (5Gi)
+- **Storage type**: hostPath (`/var/lib/data/fleetman-mongodb`)
+- **Access mode**: ReadWriteOnce
+
 ### 📄 `mango-stack.yaml`
 MongoDB database configuration:
 
-- **mongodb**: MongoDB 3.6.5 deployment with ClusterIP service
+- **mongodb**: MongoDB 3.6.5 deployment with persistent storage
 - **Port**: 27017 (internal cluster access only)
+- **Storage**: Uses PVC for data persistence
 
 ## Quick Start
 
@@ -50,20 +59,26 @@ MongoDB database configuration:
 
 ### Deploy the Application
 
-1. **Deploy MongoDB:**
-   ```bash
-   kubectl apply -f mango-stack.yaml
-   ```
+#### Option 1: Deploy in order (recommended)
+```bash
+# 1. Create persistent storage first
+kubectl apply -f 01-storage.yaml
 
-2. **Deploy Application Services:**
-   ```bash
-   kubectl apply -f workload.yaml
-   ```
+# 2. Deploy MongoDB
+kubectl apply -f mango-stack.yaml
 
-3. **Expose Services:**
-   ```bash
-   kubectl apply -f services.yaml
-   ```
+# 3. Deploy application services
+kubectl apply -f workload.yaml
+
+# 4. Expose services
+kubectl apply -f services.yaml
+```
+
+#### Option 2: Deploy all at once
+```bash
+# Apply all configurations (Kubernetes handles dependencies)
+kubectl apply -f .
+```
 
 ### Access the Application
 
@@ -152,14 +167,59 @@ curl http://localhost:30020/health
 curl http://localhost:30010
 ```
 
+## Data Management
+
+### Reset MongoDB Data (Fresh Start)
+
+To completely clear MongoDB data and start fresh:
+
+```bash
+# 1. Delete all MongoDB data files from host directory
+docker run --rm -v /var/lib/data/fleetman-mongodb:/data alpine sh -c "rm -rf /data/*"
+
+# 2. Verify directory is empty
+docker run --rm -v /var/lib/data/fleetman-mongodb:/data alpine ls -la /data
+
+# 3. Restart MongoDB (will create fresh database)
+kubectl delete deployment mongodb
+kubectl apply -f mango-stack.yaml
+```
+
+### Check MongoDB Data Persistence
+
+```bash
+# View data files in MongoDB volume
+docker run --rm -v /var/lib/data/fleetman-mongodb:/data alpine ls -la /data
+
+# Check data size
+kubectl exec deployment/mongodb -- du -sh /data/db
+
+# Test data persistence by deleting and recreating pods
+kubectl delete pod -l app=mongodb
+kubectl get pods  # New pod should start and retain data
+```
+
+### Storage Location
+
+- **Container path**: `/data/db` (where MongoDB writes)
+- **Host path**: `/var/lib/data/fleetman-mongodb` (persistent storage in Docker Desktop VM)
+- **Access**: Data persists across pod deletions but is stored in Docker Desktop's Linux VM
+
 ## Cleanup
 
 To remove all resources:
 
 ```bash
+# Remove deployments and services
 kubectl delete -f services.yaml
 kubectl delete -f workload.yaml
 kubectl delete -f mango-stack.yaml
+
+# Remove persistent storage (WARNING: This deletes data!)
+kubectl delete -f 01-storage.yaml
+
+# Optional: Clean up MongoDB data files from host
+docker run --rm -v /var/lib/data/fleetman-mongodb:/data alpine sh -c "rm -rf /data/*"
 ```
 
 ## Development
@@ -173,6 +233,8 @@ This configuration uses production Docker images from `richardchesterwood/k8s-fl
 ## Notes
 
 - All services are configured with Spring Boot production profiles
-- MongoDB data is not persisted (no persistent volumes configured)
+- **MongoDB data IS persisted** using PersistentVolumeClaims with hostPath storage
+- Data survives pod restarts and deletions but is stored in Docker Desktop's Linux VM
 - External access is provided via NodePort services suitable for development/testing
-- For production, consider using Ingress controllers and persistent storage
+- Files are processed in alphabetical order for proper dependency handling
+- For production, consider using cloud-based persistent storage and Ingress controllers

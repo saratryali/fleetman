@@ -1,0 +1,30 @@
+# Local storage for MongoDB. This is not suitable for production, but is fine for development and testing.
+# what do we want?
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  storageClassName: my-local-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# how do we want to use it?
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-storage
+spec:
+  storageClassName: my-local-storage
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /var/lib/data/fleetman-mongodb
+    type: DirectoryOrCreate
+  capacity:
+    storage: 5Gi
+

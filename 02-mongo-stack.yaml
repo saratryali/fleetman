@@ -20,9 +20,9 @@ spec:
             mountPath: /data/db
       volumes:
       - name: mongo-persistent-storage
-        hostPath:
-          path: /var/lib/data/mongodb
-          type: DirectoryOrCreate
+      # pointer to configure the persistent volume claim
+        persistentVolumeClaim:
+          claimName: mongo-pvc
 ---
 apiVersion: v1
 kind: Service
